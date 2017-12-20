@@ -4,6 +4,7 @@ using System.Collections.Generic;
 public class PoolController : MonoBehaviour
 {
     public string poolId;
+    public GameObject poolItemPrefab;
     private List<PoolItem> items;
     private List<PoolItem> spawnedItems;
 
@@ -31,6 +32,11 @@ public class PoolController : MonoBehaviour
 
     public PoolItem GetItem(bool random = true)
     {
+        //if no items are left in the pool spawn a new prefab
+        //this should preferably NOT happen in production
+        if (items.Count == 0)
+            SpawnNewPoolItem();
+
         int index = 0;
         if (random)
             index = Random.Range(0, items.Count);
@@ -95,5 +101,12 @@ public class PoolController : MonoBehaviour
         {
             PutItem(spawnedItems[0]);
         }
+    }
+
+    public void SpawnNewPoolItem()
+    {
+        GameObject newItem = Instantiate(poolItemPrefab);
+
+        PutItem(newItem.GetComponent<PoolItem>());
     }
 }
