@@ -15,13 +15,20 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
     public float minQueryDelay = 0.5f;
 
     [SerializeField]
-    protected int limit = 10;  
+    protected int limit = 10;
+    [SerializeField]
+    protected int offsetStep = 10;
     protected int offset = 0;
     protected string keyword;
+    [System.NonSerialized]
+    public bool canLoadMoreItems = false;
+    [System.NonSerialized]
+    public RequestOperationType curOperationType;
     protected Coroutine queryCoroutine;
 
     public UnityEvent emptyQueryEvent;
-    public UnityEvent querySentEvent;
+    public UnityEvent newQuerySentEvent;
+    public UnityEvent loadMoreResultsSentEvent;
     public UnityEvent itemsReceivedEvent;
     public UnityEvent noItemsReceivedEvent;
     public UnityEvent errorReceiveEvent;
@@ -29,12 +36,18 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
     public void SubmitNewSearch(string _keyword)
     {
         keyword = _keyword;
+        offset = 0;
+        canLoadMoreItems = false;
+        curOperationType = RequestOperationType.LoadNewItems;
+
         SubmitQuery();
     }
 
-    public void SubmitOffset(int _offset)
+    public void LoadMoreResults()
     {
-        offset = _offset;
+        offset += offsetStep;
+        curOperationType = RequestOperationType.LoadMoreItems;
+
         SubmitQuery();
     }
 
@@ -50,13 +63,18 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
     {
         //don't send too many queries per second
         //when rapidly typing in the search bar make sure 'minQueryDelay' seconds has passed since the last character
-        //or else t
-        yield return new WaitForSeconds(minQueryDelay);
+        if(curOperationType == RequestOperationType.LoadNewItems)
+            yield return new WaitForSeconds(minQueryDelay);
 
         //don't query empty strings
         if (keyword == "")
         {
             emptyQueryEvent.Invoke();
+            curOperationType = RequestOperationType.Idle;
+
+            //let the animation fade out the results
+            yield return new WaitForSeconds(0.3f);
+
             SearchResultsView.Instance.ResetView();
 
             yield break;
@@ -78,7 +96,16 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
         asyncOp.completed += ReceiveResponse;
 
         queryCoroutine = null;
-        querySentEvent.Invoke();
+        
+        if(curOperationType == RequestOperationType.LoadMoreItems)
+        {
+            loadMoreResultsSentEvent.Invoke();
+        }
+        //I'm loading new results
+        else if (curOperationType == RequestOperationType.LoadNewItems)
+        {
+            newQuerySentEvent.Invoke();
+        }
 
         yield break;
     }
@@ -86,8 +113,8 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
     protected void ReceiveResponse(AsyncOperation asyncOp)
     {
         UnityWebRequest queryRequest = ((UnityWebRequestAsyncOperation)asyncOp).webRequest;
-
-        if(!string.IsNullOrEmpty(queryRequest.error))
+        
+        if (!string.IsNullOrEmpty(queryRequest.error))
         {
             ErrorResultView.Instance.UpdateView(queryRequest.error);
 
@@ -96,21 +123,46 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
         else
         {
             //extract the data from the response
-            string responseString = Encoding.ASCII.GetString(queryRequest.downloadHandler.data);
-            JSONNode data = JSON.Parse(responseString)["data"];
-            
-            //got some items
-            if (data.Count > 0)
+            string responseString = Encoding.UTF8.GetString(queryRequest.downloadHandler.data);
+            JSONNode responseJSON = JSON.Parse(responseString);
+            JSONNode meta = responseJSON["meta"];
+            JSONNode data = responseJSON["data"];
+
+            //invoke events only if the search keyword was not changed since this request was sent
+            //otherwise disregard this response
+            string queryKeyword = meta["q"];
+            if (queryKeyword == keyword)
             {
-                SearchResultsView.Instance.ReceiveModels(data);
-                itemsReceivedEvent.Invoke();
+                int indexOfLastItem = (int)meta["offset"] + (int)meta["limit"];
+                int itemCount = (int)meta["count"];
+
+                canLoadMoreItems = indexOfLastItem < itemCount;
+
+                //got some items
+                if (data.Count > 0)
+                {
+                    SearchResultsView.Instance.ReceiveModels(data);
+                    itemsReceivedEvent.Invoke();
+                }
+                //got no items :(
+                else
+                {
+                    noItemsReceivedEvent.Invoke();
+                }
             }
-            //got no items :(
             else
             {
-                Debug.LogWarning("No items received");
-                noItemsReceivedEvent.Invoke();
+                Debug.Log("Disregarding a response. Reason: new keyword");
             }
         }
+
+        curOperationType = RequestOperationType.Idle;
     }
+}
+
+public enum RequestOperationType
+{
+    Idle,
+    LoadNewItems,
+    LoadMoreItems
 }
