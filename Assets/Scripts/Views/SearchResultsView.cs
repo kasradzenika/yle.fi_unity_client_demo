@@ -75,11 +75,8 @@ public class SearchResultsView : MonoBehaviourSingleton<SearchResultsView>
 
             //this is a bit heavy but as long as it's not more than 10 times per frame it's ok
             newItemView = newPoolItem.GetComponent<ResultItemView>();
-
-            //I blindly consider all the films have a title on at least one language. Choose the first language and display
-            //EDIT: I used to use ["fi"] to get Finnish title instead of [0] but not all programs have Finnish titles
-            newItemView.title = models[i]["title"][0];
-            newItemView.UpdateView();
+            
+            newItemView.UpdateView(models[i]);
         }
     }
 }

@@ -133,8 +133,8 @@ public class SearchController : MonoBehaviourSingleton<SearchController>
             string queryKeyword = meta["q"];
             if (queryKeyword == keyword)
             {
-                int indexOfLastItem = (int)meta["offset"] + (int)meta["limit"];
-                int itemCount = (int)meta["count"];
+                int indexOfLastItem = meta["offset"].AsInt + (int)meta["limit"].AsInt;
+                int itemCount = meta["count"].AsInt;
 
                 canLoadMoreItems = indexOfLastItem < itemCount;
 
